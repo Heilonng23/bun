@@ -1179,6 +1179,9 @@ impl<const SSL: bool> NewSocket<SSL> {
             let handlers = self.get_handlers();
             handlers.mark_active();
             self.update_flags(|f| f.insert(Flags::IS_ACTIVE));
+            if let Some(ar) = crate::jsc_hooks::active_resources() {
+                ar.add_socket();
+            }
             // Keep the JS wrapper alive while the socket is active.
             // `getThisValue` may not have been called yet (e.g. server-side
             // sockets without default data), in which case the ref is still
@@ -1213,6 +1216,9 @@ impl<const SSL: bool> NewSocket<SSL> {
             }
 
             self.update_flags(|f| f.remove(Flags::IS_ACTIVE));
+            if let Some(ar) = crate::jsc_hooks::active_resources() {
+                ar.remove_socket();
+            }
             // Allow the JS wrapper to be GC'd now that the socket is idle.
             // Do this before touching `handlers`: in client mode
             // `handlers.markInactive()` frees the Handlers allocation
@@ -1885,6 +1891,9 @@ impl<const SSL: bool> NewSocket<SSL> {
                     // ref `mark_active` took on the *captured* Handlers so
                     // it can reach zero in `Scope::exit` instead of leaking.
                     this_ref.update_flags(|f| f.remove(Flags::IS_ACTIVE));
+                    if let Some(ar) = crate::jsc_hooks::active_resources() {
+                        ar.remove_socket();
+                    }
                     let vm = VirtualMachine::get();
                     // SAFETY: VM singleton is always live once initialized.
                     if !(*vm).is_shutting_down() {
@@ -3501,6 +3510,9 @@ impl<const SSL: bool> NewSocket<SSL> {
         if this.flags.get().contains(Flags::IS_ACTIVE) {
             this.poll_ref.with_mut(|p| p.disable());
             this.update_flags(|f| f.remove(Flags::IS_ACTIVE));
+            if let Some(ar) = crate::jsc_hooks::active_resources() {
+                ar.remove_socket();
+            }
             // Do NOT markInactive raw_handlers — ownership of the
             // active_connections=1 it holds is transferring to `raw`.
             this.this_value.with_mut(|r| r.downgrade());
@@ -3573,6 +3585,12 @@ impl<const SSL: bool> NewSocket<SSL> {
         // SAFETY: raw just allocated via heap::alloc.
         let raw_ref: &TLSSocket = unsafe { &*raw };
         raw_ref.ref_();
+        // `raw` is constructed with `IS_ACTIVE` already set (it bypasses
+        // `mark_active`), so account for it here to keep the active-resources
+        // counter balanced with the `remove_socket()` in `mark_inactive`.
+        if let Some(ar) = crate::jsc_hooks::active_resources() {
+            ar.add_socket();
+        }
         // SAFETY: `raw` came from `TLSSocket::new` (heap::alloc); intrusive +1 held.
         unsafe { (*tls_ptr).twin.set(Some(IntrusiveRc::from_raw(raw))) };
         // SAFETY: `new_raw` is the live adopted `us_socket_t`.

@@ -291,6 +291,9 @@ impl Listener {
                 let this_value = js_Listener::to_js(this, global);
                 this_ref.strong_self.with_mut(|s| s.set(global, this_value));
                 this_ref.poll_ref.with_mut(|p| p.ref_(bun_io::js_vm_ctx()));
+                if let Some(ar) = crate::jsc_hooks::active_resources() {
+                    ar.add_listener();
+                }
                 return Ok(this_value);
             }
         }
@@ -542,6 +545,9 @@ impl Listener {
         let this_value = js_Listener::to_js(this, global);
         this_ref.strong_self.with_mut(|s| s.set(global, this_value));
         this_ref.poll_ref.with_mut(|p| p.ref_(bun_io::js_vm_ctx()));
+        if let Some(ar) = crate::jsc_hooks::active_resources() {
+            ar.add_listener();
+        }
 
         Ok(this_value)
     }
@@ -761,6 +767,9 @@ impl Listener {
         if matches!(this.listener.get(), ListenerType::None) {
             return;
         }
+        if let Some(ar) = crate::jsc_hooks::active_resources() {
+            ar.remove_listener();
+        }
         let listener = this.listener.replace(ListenerType::None);
 
         if matches!(listener, ListenerType::Uws(_)) {
@@ -797,6 +806,11 @@ impl Listener {
     pub fn finalize(self: Box<Self>) {
         log!("finalize");
         let listener = self.listener.replace(ListenerType::None);
+        if !matches!(listener, ListenerType::None) {
+            if let Some(ar) = crate::jsc_hooks::active_resources() {
+                ar.remove_listener();
+            }
+        }
         match listener {
             ListenerType::Uws(socket) => {
                 Self::unlink_unix_socket_path(&self);

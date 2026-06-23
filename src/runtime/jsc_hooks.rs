@@ -96,6 +96,42 @@ pub struct RuntimeState {
     /// — far too large to construct on the stack inside `Box::new(RuntimeState{..})`.
     pub body_value_pool: Box<crate::webcore::body::HiveAllocator>,
     pub isolation_handles: IsolationHandles,
+    /// Live native handles/requests for `process.getActiveResourcesInfo()`.
+    pub active_resources: ActiveResources,
+}
+
+/// Per-thread counts of live native handles/requests, surfaced to JS via
+/// `process.getActiveResourcesInfo()`. Counters are bumped at the resource's
+/// own active/inactive transition (no stored pointers, no query-time deref).
+#[derive(Default)]
+pub struct ActiveResources {
+    /// Open `NewSocket<_>` count: incremented in `mark_active`, decremented
+    /// wherever `Flags::IS_ACTIVE` is cleared.
+    pub sockets: Cell<usize>,
+    /// Listening `Listener` count: incremented on successful `listen()`,
+    /// decremented in `do_stop`.
+    pub listeners: Cell<usize>,
+    /// In-flight `AsyncFSTask` / `UVFSRequest` count.
+    pub fs_requests: Cell<usize>,
+}
+
+impl ActiveResources {
+    #[inline]
+    pub fn add_socket(&self) {
+        self.sockets.set(self.sockets.get() + 1);
+    }
+    #[inline]
+    pub fn remove_socket(&self) {
+        self.sockets.set(self.sockets.get().saturating_sub(1));
+    }
+    #[inline]
+    pub fn add_listener(&self) {
+        self.listeners.set(self.listeners.get() + 1);
+    }
+    #[inline]
+    pub fn remove_listener(&self) {
+        self.listeners.set(self.listeners.get().saturating_sub(1));
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -173,6 +209,19 @@ pub(crate) fn isolation_handles() -> Option<&'static mut IsolationHandles> {
     }
     // SAFETY: live boxed per-thread `RuntimeState`.
     Some(unsafe { &mut (*state).isolation_handles })
+}
+
+/// Per-thread [`ActiveResources`] registry. None only before
+/// [`init_runtime_state`] (e.g. `bun_jsc` unit tests with no high tier).
+/// Single JS thread; callers must not hold the borrow across JS re-entry.
+#[inline]
+pub(crate) fn active_resources() -> Option<&'static mut ActiveResources> {
+    let state = runtime_state();
+    if state.is_null() {
+        return None;
+    }
+    // SAFETY: live boxed per-thread `RuntimeState`.
+    Some(unsafe { &mut (*state).active_resources })
 }
 
 /// Per-VM lazy DNS resolver storage. Shared borrow only — c-ares callbacks
@@ -328,6 +377,7 @@ unsafe fn init_runtime_state(
         transpiler_arena: Box::new(bun_alloc::Arena::borrowing_default()),
         body_value_pool: Box::new(crate::webcore::body::HiveAllocator::init()),
         isolation_handles: IsolationHandles::default(),
+        active_resources: ActiveResources::default(),
     }));
     RUNTIME_STATE.with(|c| c.set(state));
 
