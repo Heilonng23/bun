@@ -587,43 +587,9 @@ void addParameter(WTF::StringBuilder& result, const StringView& arg_name)
     }
 }
 
-WTF::String ERR_INVALID_ARG_TYPE(JSC::ThrowScope& scope, JSC::JSGlobalObject* globalObject, const StringView& arg_name, const StringView& expected_type, JSValue actual_value)
-{
-    WTF::StringBuilder result;
-    result.append("The "_s);
-    addParameter(result, arg_name);
-    result.append(" must be "_s);
-
-    // Node categorizes a free-form phrase like "Array of unique strings"
-    // (spaces, but not a flattened "X, Y, or Z" list) as neither a primitive
-    // type name nor a class name: it renders "must be an Array of unique
-    // strings", not "must be of type ...". Flattened lists keep the legacy
-    // "of type" rendering.
-    bool isPhrase = expected_type.contains(' ') && !expected_type.contains(", "_s) && !expected_type.contains(" or "_s);
-    if (isPhrase) {
-        bool hasUppercase = false;
-        for (unsigned i = 0; i < expected_type.length(); i++) {
-            if (isASCIIUpper(expected_type[i])) {
-                hasUppercase = true;
-                break;
-            }
-        }
-        if (hasUppercase)
-            result.append("an "_s);
-    } else {
-        result.append("of type "_s);
-    }
-
-    result.append(expected_type);
-    result.append(". Received "_s);
-    determineSpecificType(JSC::getVM(globalObject), globalObject, result, actual_value);
-    RETURN_IF_EXCEPTION(scope, {});
-    return result.toString();
-}
-
 // Matches Node's kTypes list: primitive type names accepted by ERR_INVALID_ARG_TYPE.
 // https://github.com/nodejs/node/blob/v26.3.0/lib/internal/errors.js#L72
-static bool isPrimitiveTypeName(const WTF::String& type)
+static bool isPrimitiveTypeName(const StringView& type)
 {
     return type == "string"_s || type == "function"_s || type == "number"_s
         || type == "object"_s || type == "Function"_s || type == "Object"_s
@@ -631,7 +597,7 @@ static bool isPrimitiveTypeName(const WTF::String& type)
 }
 
 // Matches Node's classRegExp /^[A-Z][a-zA-Z0-9]*$/.
-static bool isClassName(const WTF::String& type)
+static bool isSingleClassName(const StringView& type)
 {
     if (type.isEmpty() || !isASCIIUpper(type[0]))
         return false;
@@ -640,6 +606,49 @@ static bool isClassName(const WTF::String& type)
             return false;
     }
     return true;
+}
+
+WTF::String ERR_INVALID_ARG_TYPE(JSC::ThrowScope& scope, JSC::JSGlobalObject* globalObject, const StringView& arg_name, const StringView& expected_type, JSValue actual_value)
+{
+    WTF::StringBuilder result;
+    result.append("The "_s);
+    addParameter(result, arg_name);
+    result.append(" must be "_s);
+
+    // Categorise a single expected type exactly as the ArgList overload below
+    // categorises each list entry: kTypes primitives lowercase to "of type x",
+    // a bare CamelCase identifier is a class name ("an instance of X"), and
+    // everything else keeps the legacy phrase / "of type X" rendering so
+    // pre-formatted callers ("Array of unique strings", flattened lists) are
+    // unaffected.
+    if (isPrimitiveTypeName(expected_type)) {
+        result.append("of type "_s);
+        result.append(expected_type.toString().convertToASCIILowercase());
+    } else if (isSingleClassName(expected_type)) {
+        result.append("an instance of "_s);
+        result.append(expected_type);
+    } else {
+        bool isPhrase = expected_type.contains(' ') && !expected_type.contains(", "_s) && !expected_type.contains(" or "_s);
+        if (isPhrase) {
+            bool hasUppercase = false;
+            for (unsigned i = 0; i < expected_type.length(); i++) {
+                if (isASCIIUpper(expected_type[i])) {
+                    hasUppercase = true;
+                    break;
+                }
+            }
+            if (hasUppercase)
+                result.append("an "_s);
+        } else {
+            result.append("of type "_s);
+        }
+        result.append(expected_type);
+    }
+
+    result.append(". Received "_s);
+    determineSpecificType(JSC::getVM(globalObject), globalObject, result, actual_value);
+    RETURN_IF_EXCEPTION(scope, {});
+    return result.toString();
 }
 
 // Port of Node's ERR_INVALID_ARG_TYPE list rendering: expected entries are
@@ -666,7 +675,7 @@ WTF::String ERR_INVALID_ARG_TYPE(JSC::ThrowScope& scope, JSC::JSGlobalObject* gl
         WTF::String value = view->toString();
         if (isPrimitiveTypeName(value))
             types.append(value.convertToASCIILowercase());
-        else if (isClassName(value))
+        else if (isSingleClassName(value))
             instances.append(value);
         else
             other.append(value);

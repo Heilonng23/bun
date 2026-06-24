@@ -713,9 +713,11 @@ impl ErrorCode {
     pub const DIR_CONCURRENT_OPERATION: ErrorCode = ErrorCode(327);
     /// `ERR_INVALID_BUFFER_SIZE` (instanceof RangeError)
     pub const INVALID_BUFFER_SIZE: ErrorCode = ErrorCode(328);
+    /// `ERR_HTTP2_INVALID_CONNECTION_HEADERS` (instanceof TypeError)
+    pub const HTTP2_INVALID_CONNECTION_HEADERS: ErrorCode = ErrorCode(329);
 
     /// == C++ `NODE_ERROR_COUNT`.
-    pub const COUNT: u16 = 329;
+    pub const COUNT: u16 = 330;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1433,6 +1435,7 @@ static CODE_STR: [&str; ErrorCode::COUNT as usize] = [
     "ERR_FS_CP_SYMLINK_TO_SUBDIRECTORY",
     "ERR_DIR_CONCURRENT_OPERATION",
     "ERR_INVALID_BUFFER_SIZE",
+    "ERR_HTTP2_INVALID_CONNECTION_HEADERS",
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
