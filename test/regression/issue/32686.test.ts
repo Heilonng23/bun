@@ -31,6 +31,6 @@ test.concurrent("--define CLI auto-quotes a value starting with a dot", async ()
     stderr: "pipe",
   });
   const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+  expect({ stdout, stderr, exitCode }).toMatchObject({ exitCode: 0 });
   expect(stdout).toContain(JSON.stringify("./src/worker.ts"));
-  expect(exitCode).toBe(0);
 });
