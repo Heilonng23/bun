@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { tempDir } from "harness";
+import { bunEnv, bunExe, tempDir } from "harness";
 import { join } from "path";
 
 // https://github.com/oven-sh/bun/issues/32686
@@ -20,3 +20,19 @@ describe.each(["./src/worker.ts", "../src/worker.ts", "/abs/path", "/$bunfs/root
     });
   },
 );
+
+test("--define CLI auto-quotes a value starting with a dot", async () => {
+  using dir = tempDir("bun-build-define-32686-cli", {
+    "entry.ts": `declare const X: string; console.log(X);`,
+  });
+  await using proc = Bun.spawn({
+    cmd: [bunExe(), "build", "--define", "X=./src/worker.ts", "entry.ts"],
+    env: bunEnv,
+    cwd: String(dir),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+  expect(stdout).toContain(JSON.stringify("./src/worker.ts"));
+  expect(exitCode).toBe(0);
+});
