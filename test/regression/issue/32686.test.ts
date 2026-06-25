@@ -3,7 +3,7 @@ import { bunEnv, bunExe, tempDir } from "harness";
 import { join } from "path";
 
 // https://github.com/oven-sh/bun/issues/32686
-test.concurrent.each(["./src/worker.ts", "../src/worker.ts", "/abs/path", "/$bunfs/root/worker", ".", "/"])(
+test.concurrent.each(["./src/worker.ts", "../src/worker.ts", "/abs/path", "/$bunfs/root/worker", ".", "/", "/=foo"])(
   "define value %j is auto-quoted",
   async value => {
     using dir = tempDir("bun-build-define-32686", {
