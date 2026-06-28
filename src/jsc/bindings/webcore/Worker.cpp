@@ -394,9 +394,11 @@ void Worker::dispatchEvent(Event& event)
     EventTargetWithInlineData::dispatchEvent(event);
 }
 
-// Dispatch 'open' (node's 'online') at most once, on the parent thread: from
-// dispatchOnline()'s posted task, or earlier from drainToParent() when the
-// worker posted a message during module evaluation (Node: 'online' precedes 'message').
+// Dispatch 'open' (node's 'online') at most once, on the parent thread. Node
+// emits 'online' before the entry point even loads, so it strictly precedes
+// every event the worker produces ('message', 'error', 'close'). Each
+// parent-side task that can be the first one delivered therefore calls this:
+// dispatchOnline()'s task, drainToParent(), the error tasks, and the close task.
 // Returns whether the event was dispatched by this call.
 bool Worker::dispatchOpenIfNeeded()
 {
@@ -507,7 +509,11 @@ void Worker::fireEarlyMessages(Zig::GlobalObject* workerGlobalObject)
 
 void Worker::dispatchErrorWithMessage(WTF::String message)
 {
-    postTaskToParent([protectedThis = Ref { *this }, message = message.isolatedCopy()](ScriptExecutionContext&) {
+    postTaskToParent([protectedThis = Ref { *this }, message = message.isolatedCopy()](ScriptExecutionContext& context) {
+        // A worker whose entry point fails to load or evaluate posts this
+        // before dispatchOnline() ever runs; Node still emits 'online' first.
+        if (protectedThis->dispatchOpenIfNeeded())
+            defaultGlobalObject(context.jsGlobalObject())->drainMicrotasks();
         ErrorEvent::Init init;
         init.message = message;
 
@@ -523,6 +529,9 @@ bool Worker::dispatchErrorWithValue(Zig::GlobalObject* workerGlobalObject, JSVal
         return false;
 
     return postTaskToParent([protectedThis = Ref { *this }, serialized](ScriptExecutionContext& context) {
+        // See dispatchErrorWithMessage: 'online' precedes a module-load error.
+        if (protectedThis->dispatchOpenIfNeeded())
+            defaultGlobalObject(context.jsGlobalObject())->drainMicrotasks();
         auto* globalObject = context.globalObject();
         auto& vm = JSC::getVM(globalObject);
         auto scope = DECLARE_THROW_SCOPE(vm);
@@ -564,7 +573,14 @@ bool Worker::dispatchExit(int32_t exitCode)
     return ScriptExecutionContext::postTaskTo(
         m_parentContextId,
         [this] { this->deref(); },
-        [exitCode, protectedThis = Ref { *this }](ScriptExecutionContext&) {
+        [exitCode, protectedThis = Ref { *this }](ScriptExecutionContext& context) {
+            // A worker that never reached dispatchOnline (its entry point
+            // called process.exit() or failed to load) still started, so Node
+            // emits 'online' before 'exit'. No-op once 'open' has fired, and
+            // suppressed by dispatchEvent() after terminate().
+            if (protectedThis->dispatchOpenIfNeeded())
+                defaultGlobalObject(context.jsGlobalObject())->drainMicrotasks();
+
             // Closing → dispatch 'close' → Closed. The split lets 'close'/'exit'
             // handlers observe threadId == -1 and isOnline() == false while
             // postMessage() (gated only on Closed) still accepts and drops the
