@@ -1002,8 +1002,9 @@ where
 
                         let affected_len: usize = 'brk: {
                             if IS_KQUEUE {
-                                // SAFETY: hot-reload runs single-threaded on the JS thread;
-                                // no other live `&mut EntriesOption` for this key here.
+                                // Index lookup only (`BSSMap::get` locks internally). The slot's
+                                // contents can be rewritten in place by a JS-thread resolve, so
+                                // they are read only under `entries_mutex` ('locked block below).
                                 if let Some(existing) = rfs.entries.get(file_path) {
                                     self.put_tombstone(file_path, existing);
                                     entries_option = Some(existing);
