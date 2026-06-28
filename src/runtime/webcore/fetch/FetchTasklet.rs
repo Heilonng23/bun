@@ -2539,7 +2539,6 @@ pub struct FetchOptions {
     #[builder(default)]
     pub url_proxy_buffer: Box<[u8]>,
     pub signal: Option<*mut AbortSignal>,
-    pub global_this: Option<GlobalRef>,
     /// Custom Hostname
     pub hostname: Option<Box<[u8]>>,
     #[builder(default = StrongOptional::empty())]

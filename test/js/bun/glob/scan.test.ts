@@ -1181,13 +1181,14 @@ describe("glob.scan option flags", () => {
       stderr: "pipe",
     });
     const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+    // Assert the exit before parsing stdout, so a subprocess crash surfaces
+    // stdout/stderr/exitCode instead of a bare SyntaxError from JSON.parse.
+    // `stderr` is not pinned: ASAN/debug builds emit benign warnings there.
+    expect({ stdout, stderr, exitCode }).toMatchObject({ exitCode: 0 });
     const { implicit, explicit } = JSON.parse(stdout);
-    // `stderr` is on the lhs so it surfaces in the failure diff, but not
-    // pinned on the rhs: ASAN/debug builds may emit benign warnings there.
-    expect({ implicit: prepareEntries(implicit), explicit: prepareEntries(explicit), stderr, exitCode }).toMatchObject({
+    expect({ implicit: prepareEntries(implicit), explicit: prepareEntries(explicit) }).toEqual({
       implicit: DEFAULT,
       explicit: DEFAULT,
-      exitCode: 0,
     });
   });
 });

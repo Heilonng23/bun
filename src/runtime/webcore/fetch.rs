@@ -2031,7 +2031,6 @@ fn fetch_impl<const ALLOW_GET_BODY: bool>(
         .maybe_proxy_headers(proxy_headers.take())
         .url_proxy_buffer(url_proxy_boxed)
         .maybe_signal(signal.take())
-        .global_this(global_this.into())
         .maybe_ssl_config(ssl_config.take())
         .maybe_hostname(hostname.take())
         .upgraded_connection(upgraded_connection)
