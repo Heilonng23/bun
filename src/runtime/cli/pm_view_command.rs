@@ -158,10 +158,9 @@ pub(crate) fn view(
         Global::crash();
     }
 
-    // Parse the existing JSON response into a PackageManifest using the now-public parse function
-    // last_modified/etag/public_max_age are not needed for `pm view`;
-    // is_extended_manifest is true because view uses the application/json
-    // Accept header.
+    // `pm view` reads the whole manifest, so the cache metadata members
+    // (`last_modified`/`etag`/`public_max_age`) are unused here. The
+    // `application/json` Accept header requests the extended manifest shape.
     let parsed_manifest = match PackageManifest::parse()
         .scope(&scope)
         .log(&mut log)
