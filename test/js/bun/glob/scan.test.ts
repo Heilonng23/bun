@@ -1136,32 +1136,28 @@ describe("glob.scan option flags", () => {
     });
   });
 
-  test.concurrent("followSymlinks controls whether a symlinked directory is traversed", () => {
-    // `outside/` is a sibling of the scanned root, so the only way
-    // `**/*.txt` reaches `linked.txt` is through the `link` symlink.
-    using dir = tempDir("glob-flag-symlinks", {
-      "root/top.txt": "top",
-      "root/.hidden.txt": "hidden",
-      "root/sub/inner.txt": "inner",
-      "outside/linked.txt": "linked",
-    });
-    const cwd = path.join(String(dir), "root");
-    try {
+  test.concurrent.skipIf(!canCreateDirSymlink)(
+    "followSymlinks controls whether a symlinked directory is traversed",
+    () => {
+      // `outside/` is a sibling of the scanned root, so the only way
+      // `**/*.txt` reaches `linked.txt` is through the `link` symlink.
+      using dir = tempDir("glob-flag-symlinks", {
+        "root/top.txt": "top",
+        "root/.hidden.txt": "hidden",
+        "root/sub/inner.txt": "inner",
+        "outside/linked.txt": "linked",
+      });
+      const cwd = path.join(String(dir), "root");
       fs.symlinkSync(path.join("..", "outside"), path.join(cwd, "link"), "dir");
-    } catch (err: any) {
-      // Creating a directory symlink needs a privilege that Windows CI
-      // runners may not have; matches the symlink test above.
-      if (err.code === "EPERM" || err.code === "EACCES") return;
-      throw err;
-    }
-    expect({
-      on: prepareEntries([...new Glob("**/*.txt").scanSync({ cwd, followSymlinks: true })]),
-      off: prepareEntries([...new Glob("**/*.txt").scanSync({ cwd, followSymlinks: false })]),
-    }).toEqual({
-      on: ["link/linked.txt", ...DEFAULT],
-      off: DEFAULT,
-    });
-  });
+      expect({
+        on: prepareEntries([...new Glob("**/*.txt").scanSync({ cwd, followSymlinks: true })]),
+        off: prepareEntries([...new Glob("**/*.txt").scanSync({ cwd, followSymlinks: false })]),
+      }).toEqual({
+        on: ["link/linked.txt", ...DEFAULT],
+        off: DEFAULT,
+      });
+    },
+  );
 
   // An omitted `cwd` must resolve to the process cwd, the same directory an
   // explicit `cwd: process.cwd()` names. Run in a subprocess so the implicit
