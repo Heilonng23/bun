@@ -1053,14 +1053,12 @@ impl BufferOutputSink {
         let global = unsafe { (*sink).global };
 
         if let Some(mut err) = js_err {
-            // SAFETY: (*sink).response is the heap Response allocated in init()
-            // and kept alive by (*sink).response_value (Strong root).
-            let sink_body_value = unsafe { (*(*sink).response).get_body_value() };
-            let sink_ptr_usize = sink as usize;
             // If a `.body` readable is already attached, stay `Locked` so
             // `to_error_instance` delivers the error to its ByteStream; clearing
             // to `Empty` here would strand any pending `reader.read()` forever.
-            let has_readable = match sink_body_value {
+            // SAFETY: (*sink).response is the heap Response allocated in init()
+            // and kept alive by (*sink).response_value (Strong root).
+            let has_readable = match unsafe { (*(*sink).response).get_body_value() } {
                 webcore::body::Value::Locked(l) => l.readable.has(),
                 _ => false,
             };
@@ -1073,6 +1071,11 @@ impl BufferOutputSink {
                 // SAFETY: `sink` is live (refcount > 0, see fn safety contract).
                 unsafe { Self::finish_output_stream(sink, StreamResult::Err(stream_error)) };
             }
+            // Fetched after `finish_output_stream`: `get_body_value`'s borrow
+            // must not be held across a call that can re-enter JS.
+            // SAFETY: see the `get_body_value` SAFETY note above.
+            let sink_body_value = unsafe { (*(*sink).response).get_body_value() };
+            let sink_ptr_usize = sink as usize;
             if !has_readable
                 && matches!(sink_body_value, webcore::body::Value::Locked(l)
                     if l.task.map_or(0, |p| p as usize) == sink_ptr_usize && l.promise.is_none())
